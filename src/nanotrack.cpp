@@ -28,6 +28,14 @@ NanoTrack::~NanoTrack() {
     if (d_img_buffer_) cudaFree(d_img_buffer_);
 }
 
+void NanoTrack::set_track_lost_threshold(float threshold) {
+    track_lost_threshold_ = std::clamp(threshold, 0.0f, 1.0f);
+}
+
+void NanoTrack::set_persistence_frames(int frames) {
+    persistence_frames_ = std::max(0, frames);
+}
+
 bool NanoTrack::load() {
     if (!backbone_template_->load()) return false;
     if (!backbone_search_->load()) return false;
@@ -249,7 +257,7 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
     // 1. Softmax on h_cls
     // h_cls is [2, 16, 16] or [16*16*2]
     int area = grid_size_ * grid_size_;
-    float max_score = -1.0f;
+    float max_pscore = -1.0f;
     int max_idx = 0;
     
     float* cls_score = h_cls_.data() + area; // Standard: background, foreground?
@@ -306,8 +314,8 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
         float ps = penalty * score * (1.0f - WINDOW_INFLUENCE) + hanning_window_[i] * WINDOW_INFLUENCE;
         
         p_score[i] = ps;
-        if (ps > max_score) {
-            max_score = ps;
+        if (ps > max_pscore) {
+            max_pscore = ps;
             max_idx = i;
             final_box[0] = (x1 + x2)/2.0f;
             final_box[1] = (y1 + y2)/2.0f;
@@ -339,6 +347,7 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
     float rc = ratio / (pred_ratio + 1e-6f);
     float rc_penalty = std::max(rc, 1.0f / (rc + 1e-6f));
     float penalty = std::exp(-(sc_penalty * rc_penalty - 1.0f) * PENALTY_K);
+    float tracking_score = best_score_raw * penalty;
 
     // Update State Logic
     auto t_post_end = std::chrono::high_resolution_clock::now();
@@ -352,7 +361,7 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
                  "[TRACKER] Pre: %.2f ms | BB: %.2f ms | Head: %.2f ms | Post: %.2f ms || Total: %.2f ms",
                  ms_pre, ms_backbone, ms_head, ms_post, ms_total_track);
 
-    if (max_score > TRACK_LOST_THRESHOLD) {
+    if (tracking_score > track_lost_threshold_) {
         state_ = TRACKING;
         lost_counter_ = 0;
         
@@ -382,7 +391,7 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
             // Let's keep the KF prediction active as the "current belief"
             // center_x_ = pred[0]; // Already done at top
         } else if (state_ == PERSISTENCE) {
-             if (lost_counter_ > 10) state_ = GLOBAL_SEARCH; // Hardcoded 10 frames
+             if (lost_counter_ > persistence_frames_) state_ = GLOBAL_SEARCH;
         }
         
         // Return predicted box or the low conf box?
@@ -398,7 +407,7 @@ TrackResult NanoTrack::track(const uint8_t* h_img, int width, int height, int st
     res.bbox.y1 = std::max(0.0f, std::min(res.bbox.y1, (float)origin_h_));
     // ... complete clamping logic
 
-    res.score = max_score;
+    res.score = tracking_score;
     
     return res;
 }

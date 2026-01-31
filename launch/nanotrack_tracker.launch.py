@@ -24,8 +24,8 @@ def generate_launch_description():
                 'backbone_template_engine': 'nanotrack_backbone_127_fp16.engine',
                 'backbone_search_engine': 'nanotrack_backbone_255_fp16.engine',
                 'head_engine': 'nanotrack_head_fp16.engine',
-                'min_confidence': 0.6,
-                'track_lost_threshold': 0.4
+                'min_confidence': 0.99,
+                'track_lost_threshold': 0.8
             }]
         ),
         Node(

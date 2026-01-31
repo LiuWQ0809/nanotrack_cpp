@@ -34,6 +34,8 @@ public:
     
     // Returns tracking result
     TrackResult track(const uint8_t* h_img, int width, int height, int step, cudaStream_t stream = 0);
+    void set_track_lost_threshold(float threshold);
+    void set_persistence_frames(int frames);
 
 private:
     // Constants
@@ -44,7 +46,8 @@ private:
     const float WINDOW_INFLUENCE = 0.455f;
     const float SCALE_LR = 0.37f;
     const float PENALTY_K = 0.15f;
-    const float TRACK_LOST_THRESHOLD = 0.4f; // Updated from session context
+    float track_lost_threshold_ = 0.4f;
+    int persistence_frames_ = 10;
     
     int grid_size_ = 16;
     

@@ -4,6 +4,7 @@
 #include <std_msgs/msg/string.hpp>
 #include <chrono>
 #include <filesystem>
+#include <algorithm>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include "nanotrack_cpp/nanotrack.hpp"
 
@@ -46,11 +47,11 @@ public:
         output_width_ = this->declare_parameter("output_width", 640);
         output_height_ = this->declare_parameter("output_height", 480);
         
-        min_confidence_ = this->declare_parameter("min_confidence", 0.2);
+        min_confidence_ = this->declare_parameter("min_confidence", 0.99);
         lost_tolerance_ = this->declare_parameter("lost_tolerance", 5);
         found_tolerance_ = this->declare_parameter("found_tolerance", 5);
         
-        track_lost_threshold_ = this->declare_parameter("track_lost_threshold", 0.4f);
+        track_lost_threshold_ = this->declare_parameter("track_lost_threshold", 0.95f);
         persistence_frames_ = this->declare_parameter("persistence_frames", 10);
         
         std::string engine_dir = this->declare_parameter("engine_dir", "");
@@ -77,6 +78,8 @@ public:
             // We can't really throw here easily without killing node, but let's throw.
             throw std::runtime_error("Engine load failed");
         }
+        tracker_->set_track_lost_threshold(static_cast<float>(track_lost_threshold_));
+        tracker_->set_persistence_frames(persistence_frames_);
         RCLCPP_INFO(this->get_logger(), "Engines loaded successfully.");
         
         // Setup ROS
@@ -267,7 +270,8 @@ private:
        auto result = tracker_->track(msg->data.data(), w, h, step, stream_);
        
        // Handle State logic (Hysteresis)
-       if (result.score < min_confidence_) {
+       double confidence_threshold = std::max(min_confidence_, track_lost_threshold_);
+       if (result.score < confidence_threshold) {
            lost_count_++;
            found_count_ = 0;
            if (lost_count_ >= lost_tolerance_) is_lost_ = true;
